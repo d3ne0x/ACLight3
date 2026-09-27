@@ -21,8 +21,10 @@
 - Ensured output directories are created and resolved before use.
 
 ### Diagnostics
-- Added timestamped ACLight3 file logging under `Logs`.
-- Scanner exceptions now write a diagnostic log entry before presenting the warning.
+- Integrated with XeloTelemetry when the integration module is loaded.
+- Added Windows Event Log IDs for scan start, completion, and error conditions through XeloTelemetry.
+- Added a timestamped local fallback log under `Logs` so telemetry deployment issues never block the assessment.
+- Scanner exceptions now write a diagnostic entry before presenting the warning.
 
 ### Validation
 - Added `tests/Invoke-Phase0Validation.ps1` for offline syntax/manifest/module checks.
