@@ -57,3 +57,35 @@ By default, ACLight automatically scans all the domains of the scanned network f
 The tool uses functions from the open source project PowerView by Will Schroeder ([@harmj0y](https://twitter.com/harmj0y)) - a great project.
 
 For more comments and questions, you can contact Asaf Hecht ([@Hechtov](https://twitter.com/Hechtov)) and CyberArk Labs.
+
+
+---
+
+# ACLight3 stabilization fork
+
+This fork is being modernized in controlled phases while preserving the original ACLight privilege-discovery model.
+
+## Phase 0 - Stabilization
+
+Phase 0 focuses on correctness, safe execution, packaging, diagnostics, and repeatable testing. It intentionally does not redesign the ACL/privilege analysis architecture.
+
+### Supported baseline
+
+- Windows PowerShell 5.1 or PowerShell 7 on Windows
+- Domain connectivity and normal LDAP read access
+- No Domain Admin requirement for the standard read-only scan
+- Windows is required because the scanner uses ADSI/System.DirectoryServices against Active Directory
+
+### Recommended launch
+
+From PowerShell:
+
+```powershell
+git switch feature/phase-0-stabilization
+.\tests\Invoke-Phase0Validation.ps1
+.\Start-ACLight3.ps1 -Domain "contoso.com"
+```
+
+Or launch `Execute-ACLight2.bat`, which now calls the supported PowerShell entry point without bypassing the machine's execution policy.
+
+For complete validation and lab testing instructions, see `docs/PHASE0-TESTING.md`.
