@@ -76,16 +76,72 @@ THE RESULTS FILES:
 #                                                                    #
 ######################################################################
 
-# Create the results folder
-$resultsPath = $PSScriptRoot + "\Results"
-if (Test-Path $resultsPath)
-{
-    write-verbose "The results folder was already exists"
+# Create application-controlled output and log folders.
+$resultsPath = Join-Path -Path $PSScriptRoot -ChildPath 'Results'
+$logsPath = Join-Path -Path $PSScriptRoot -ChildPath 'Logs'
+
+foreach ($path in @($resultsPath, $logsPath)) {
+    if (-not (Test-Path -LiteralPath $path -PathType Container)) {
+        New-Item -ItemType Directory -Path $path -Force -ErrorAction Stop | Out-Null
+    }
 }
-else
-{
-    New-Item -ItemType directory -Path $resultsPath
+
+$script:ACLightLogFile = Join-Path -Path $logsPath -ChildPath ('ACLight3-{0:yyyyMMdd-HHmmss}.log' -f (Get-Date))
+
+function Write-ACLightLog {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Message,
+
+        [ValidateSet('INFO','WARN','ERROR')]
+        [string]$Level = 'INFO'
+    )
+
+    $line = '{0:yyyy-MM-dd HH:mm:ss.fff} [{1}] {2}' -f (Get-Date), $Level, $Message
+    try {
+        Add-Content -LiteralPath $script:ACLightLogFile -Value $line -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        Write-Verbose "Unable to write ACLight3 log entry: $($_.Exception.Message)"
+    }
 }
+
+function ConvertTo-ACLightLdapFilterValue {
+    [CmdletBinding()]
+    param(
+        [AllowNull()]
+        [string]$Value,
+
+        [switch]$PreserveWildcard
+    )
+
+    if ($null -eq $Value) {
+        return $null
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($character in $Value.ToCharArray()) {
+        switch ([int][char]$character) {
+            0  { [void]$builder.Append('\00') }
+            40 { [void]$builder.Append('\28') }
+            41 { [void]$builder.Append('\29') }
+            42 {
+                if ($PreserveWildcard) {
+                    [void]$builder.Append('*')
+                }
+                else {
+                    [void]$builder.Append('\2a')
+                }
+            }
+            92 { [void]$builder.Append('\5c') }
+            default { [void]$builder.Append($character) }
+        }
+    }
+
+    $builder.ToString()
+}
+
 #$Global:ACLscanFinished = $False
 
 # Function for advanced ACLs analysis in a specified domain
@@ -123,7 +179,7 @@ function Start-domainACLsAnalysis {
         $DomainController,
                 
         [String]
-        $exportCsvFile = "C:\Temp\scanACLsResults.csv",
+        $exportCsvFile = (Join-Path -Path $resultsPath -ChildPath 'scanACLsResults.csv'),
 
         [Switch]
         $multiLayered,
@@ -283,7 +339,7 @@ function Invoke-ACLcsvFileAnalysis {
         $DomainController,
                 
         [String]
-        $exportCsvFile = "C:\Temp\scanACLsResults.csv",
+        $exportCsvFile = (Join-Path -Path $resultsPath -ChildPath 'scanACLsResults.csv'),
 
         [Switch]
         $multiLayered,
@@ -686,7 +742,8 @@ function Start-ACLsAnalysis {
         $PageSize = 200
     ) 
     
-    if ($PSVersionTable.PSVersion.Major -ge 3){
+    if ($PSVersionTable.PSVersion -ge [Version]'5.1'){
+        Write-ACLightLog -Message "Starting ACLight3 scan. Domain='$Domain'; Full='$Full'; Output='$exportCsvFolder'."
         $time = New-Object system.Diagnostics.Stopwatch  
         $stagetime = New-Object system.Diagnostics.Stopwatch  
         $time.Start()
@@ -707,10 +764,17 @@ function Start-ACLsAnalysis {
 
         Write-Output "Great, the scan was started - version 3.3.`nIt could take a while, (5-30+ mins) depends on the size of the network"
 
-        $PathFolder = $exportCsvFolder
-        $PathFolder = $PathFolder.substring($PathFolder.length - 1, 1)
-        if ($PathFolder -ne "\"){
-            $exportCsvFolder += "\"
+        if ([string]::IsNullOrWhiteSpace($exportCsvFolder)) {
+            throw 'The exportCsvFolder parameter cannot be empty.'
+        }
+
+        if (-not (Test-Path -LiteralPath $exportCsvFolder -PathType Container)) {
+            New-Item -ItemType Directory -Path $exportCsvFolder -Force -ErrorAction Stop | Out-Null
+        }
+
+        $exportCsvFolder = (Resolve-Path -LiteralPath $exportCsvFolder -ErrorAction Stop).Path
+        if (-not $exportCsvFolder.EndsWith([IO.Path]::DirectorySeparatorChar)) {
+            $exportCsvFolder += [IO.Path]::DirectorySeparatorChar
         }
         # check if you want to scan only 1 domain
         if ($Domain) {
@@ -977,9 +1041,12 @@ function Start-ACLsAnalysis {
         $runtimeMin = [math]::round($runtimeMin , 2)
         $runtimeHours = [math]::round($runtimeHours , 3)
         Write-Output "`nTotal time of the scan: $runtimeMin Minutes, $runtimeHours Hours"
+        Write-ACLightLog -Message "ACLight3 scan completed. Discovered $numberAccounts privileged accounts in $runtimeMin minutes."
     }
     else {
-        Write-Output "`nSorry,`nThe tool need powershell version 3 or higher to perform the efficient permissions scan`nYou can upgrade the PowerShell version from Microsoft official website:`nhttps://www.microsoft.com/en-us/download/details.aspx?id=34595`n`nFinished without running.`n"
+        $message = "ACLight3 requires Windows PowerShell 5.1 or later. Current version: $($PSVersionTable.PSVersion)."
+        Write-ACLightLog -Message $message -Level ERROR
+        throw $message
     }
 }
 
@@ -2744,13 +2811,16 @@ function Get-ADObject {
 
         if($ObjectSearcher) {
             if($SID) {
-                $ObjectSearcher.filter = "(&(objectsid=$SID)$Filter)"
+                $SafeSID = ConvertTo-ACLightLdapFilterValue -Value $SID
+                $ObjectSearcher.filter = "(&(objectsid=$SafeSID)$Filter)"
             }
             elseif($Name) {
-                $ObjectSearcher.filter = "(&(name=$Name)$Filter)"
+                $SafeName = ConvertTo-ACLightLdapFilterValue -Value $Name -PreserveWildcard
+                $ObjectSearcher.filter = "(&(name=$SafeName)$Filter)"
             }
             elseif($SamAccountName) {
-                $ObjectSearcher.filter = "(&(samAccountName=$SamAccountName)$Filter)"
+                $SafeSamAccountName = ConvertTo-ACLightLdapFilterValue -Value $SamAccountName -PreserveWildcard
+                $ObjectSearcher.filter = "(&(samAccountName=$SafeSamAccountName)$Filter)"
             }
 
             try {
@@ -2961,7 +3031,7 @@ function Get-ObjectAcl {
         $PageSize = 200,
 
         [String]
-        $exportCsvFile = "C:\scanACLsResults.csv"
+        $exportCsvFile = (Join-Path -Path $resultsPath -ChildPath 'scanACLsResults.csv')
     )
 
     begin {
@@ -2975,11 +3045,15 @@ function Get-ObjectAcl {
 
         if ($Searcher) {
 
+            $SafeName = ConvertTo-ACLightLdapFilterValue -Value $Name -PreserveWildcard
+            $SafeDistinguishedName = ConvertTo-ACLightLdapFilterValue -Value $DistinguishedName -PreserveWildcard
+
             if($SamAccountName) {
-                $Searcher.filter="(&(samaccountname=$SamAccountName)(name=$Name)(distinguishedname=$DistinguishedName)$Filter)"  
+                $SafeSamAccountName = ConvertTo-ACLightLdapFilterValue -Value $SamAccountName -PreserveWildcard
+                $Searcher.filter="(&(samaccountname=$SafeSamAccountName)(name=$SafeName)(distinguishedname=$SafeDistinguishedName)$Filter)"  
             }
             else {
-                $Searcher.filter="(&(name=$Name)(distinguishedname=$DistinguishedName)$Filter)"  
+                $Searcher.filter="(&(name=$SafeName)(distinguishedname=$SafeDistinguishedName)$Filter)"  
             }
             try {
                 $Searcher.PropertiesToLoad.Clear()
@@ -3172,7 +3246,7 @@ function Invoke-ACLScanner {
         $entitySIDList,
                 
         [String]
-        $exportCsvFile = "C:\scanACLsResults.csv",
+        $exportCsvFile = (Join-Path -Path $resultsPath -ChildPath 'scanACLsResults.csv'),
 
         [ValidateRange(1,10000)] 
         [Int]
@@ -3211,12 +3285,27 @@ function Invoke-ACLScanner {
             #(($_.ActiveDirectoryRights -eq "GenericAll") -or ($_.ActiveDirectoryRights -match "Write") -or ($_.ActiveDirectoryRights -match "Create") -or ($_.ActiveDirectoryRights -match "Delete") -or (($_.ActiveDirectoryRights -match "ExtendedRight") -and (($_.ObjectType -eq "DS-Replication-Get-Changes") -or ($_.ObjectType -eq "DS-Replication-Get-Changes-All") -or ($_.ObjectType -eq "DS-Replication-Get-Changes-In-Filtered-Set") -or ($_.ObjectType -eq "User-Force-Change-Password")))) -and ($_.AccessControlType -eq "Allow")
             #######
             # the following filter is currently recommended:
-            (($_.ActiveDirectoryRights -eq "GenericAll") -or ($_.ActiveDirectoryRights -match "WriteDACL") -or ($_.ActiveDirectoryRights -match "GenericWrite") `
-             -or ($_.ActiveDirectoryRights -match "WriteOwner") -or (($_.ActiveDirectoryRights -match "WriteProperty") -and ($_.ObjectType -eq "Self-Membership")) `
-             -or (($_.ActiveDirectoryRights -match "WriteProperty") -and ($_.ObjectType -eq "Script-Path")) `
-             -or (($_.ActiveDirectoryRights -match "ExtendedRight") -and (($_.ObjectType -eq "DS-Replication-Get-Changes") -or ($_.ObjectType -eq "DS-Replication-Get-Changes-All") -or ($_.ObjectType -eq "DS-Replication-Get-Changes-In-Filtered-Set") -or ($_.ObjectType -eq "User-Force-Change-Password"))) `
-             -or (($_.ActiveDirectoryRights -match "ExtendedRight") -and ($_.ObjectType -match "All")) `
-             -and ($_.AccessControlType -eq "Allow"))
+            (
+                (
+                    ($_.ActiveDirectoryRights -eq "GenericAll") -or
+                    ($_.ActiveDirectoryRights -match "WriteDACL") -or
+                    ($_.ActiveDirectoryRights -match "GenericWrite") -or
+                    ($_.ActiveDirectoryRights -match "WriteOwner") -or
+                    (($_.ActiveDirectoryRights -match "WriteProperty") -and ($_.ObjectType -eq "Self-Membership")) -or
+                    (($_.ActiveDirectoryRights -match "WriteProperty") -and ($_.ObjectType -eq "Script-Path")) -or
+                    (
+                        ($_.ActiveDirectoryRights -match "ExtendedRight") -and
+                        (
+                            ($_.ObjectType -eq "DS-Replication-Get-Changes") -or
+                            ($_.ObjectType -eq "DS-Replication-Get-Changes-All") -or
+                            ($_.ObjectType -eq "DS-Replication-Get-Changes-In-Filtered-Set") -or
+                            ($_.ObjectType -eq "User-Force-Change-Password")
+                        )
+                    ) -or
+                    (($_.ActiveDirectoryRights -match "ExtendedRight") -and ($_.ObjectType -match "All"))
+                ) -and
+                ($_.AccessControlType -eq "Allow")
+            )
             ######         
             # or you can write here your own filters - for example, filter for accounts that have only the GenericAll permission.
             ######
@@ -3224,7 +3313,8 @@ function Invoke-ACLScanner {
         } | Export-Csv -NoTypeInformation -append $exportCsvFile -force
     }
     catch{
+        Write-ACLightLog -Message "ACL scan error: $($_.Exception.Message)" -Level ERROR
         Write-Warning "`n$_"
-        Write-Warning "Sorry but there was an error during the scanning in one or more objects."
+        Write-Warning "There was an error while scanning one or more directory objects. Review the ACLight3 log for details."
     }
 } 
