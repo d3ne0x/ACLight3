@@ -5,13 +5,22 @@ param(
 
     [switch]$Full,
 
-    [string]$OutputPath = (Join-Path -Path $PSScriptRoot -ChildPath 'Results')
+    [string]$OutputPath = (Join-Path -Path $PSScriptRoot -ChildPath 'Results'),
+
+    [string]$XeloTelemetryModulePath
 )
 
 $ErrorActionPreference = 'Stop'
 $modulePath = Join-Path -Path $PSScriptRoot -ChildPath 'ACLight2.psd1'
 
 try {
+    if (-not [string]::IsNullOrWhiteSpace($XeloTelemetryModulePath)) {
+        if (-not (Test-Path -LiteralPath $XeloTelemetryModulePath -PathType Leaf)) {
+            throw "XeloTelemetry integration module not found: $XeloTelemetryModulePath"
+        }
+        Import-Module -Name $XeloTelemetryModulePath -Force -ErrorAction Stop
+    }
+
     Import-Module -Name $modulePath -Force -ErrorAction Stop
 
     $scanParameters = @{
