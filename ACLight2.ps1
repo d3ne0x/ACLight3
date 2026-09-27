@@ -87,6 +87,27 @@ foreach ($path in @($resultsPath, $logsPath)) {
 }
 
 $script:ACLightLogFile = Join-Path -Path $logsPath -ChildPath ('ACLight3-{0:yyyyMMdd-HHmmss}.log' -f (Get-Date))
+$script:ACLightTelemetryEnabled = $false
+
+function Initialize-ACLightTelemetry {
+    [CmdletBinding()]
+    param()
+
+    if ($script:ACLightTelemetryEnabled) {
+        return
+    }
+
+    $initializer = Get-Command -Name Initialize-XeloTelemetry -ErrorAction SilentlyContinue
+    if ($initializer) {
+        try {
+            [void](Initialize-XeloTelemetry -Source 'Xelo.ACLight3' -LogName 'Application' -LogDirectory $logsPath -ApplicationName 'ACLight3' -FileFormat 'Text')
+            $script:ACLightTelemetryEnabled = $true
+        }
+        catch {
+            Write-Verbose "XeloTelemetry initialization failed; ACLight3 will use its local fallback log. $($_.Exception.Message)"
+        }
+    }
+}
 
 function Write-ACLightLog {
     [CmdletBinding()]
@@ -95,15 +116,31 @@ function Write-ACLightLog {
         [string]$Message,
 
         [ValidateSet('INFO','WARN','ERROR')]
-        [string]$Level = 'INFO'
+        [string]$Level = 'INFO',
+
+        [int]$EventId = 0
     )
+
+    if ($script:ACLightTelemetryEnabled) {
+        try {
+            switch ($Level) {
+                'WARN'  { Write-XeloWarning -Message $Message -EventId $EventId }
+                'ERROR' { Write-XeloError -Message $Message -EventId $EventId }
+                default { Write-XeloInfo -Message $Message -EventId $EventId }
+            }
+            return
+        }
+        catch {
+            Write-Verbose "XeloTelemetry write failed; ACLight3 will use its local fallback log. $($_.Exception.Message)"
+        }
+    }
 
     $line = '{0:yyyy-MM-dd HH:mm:ss.fff} [{1}] {2}' -f (Get-Date), $Level, $Message
     try {
         Add-Content -LiteralPath $script:ACLightLogFile -Value $line -Encoding UTF8 -ErrorAction Stop
     }
     catch {
-        Write-Verbose "Unable to write ACLight3 log entry: $($_.Exception.Message)"
+        Write-Verbose "Unable to write ACLight3 fallback log entry: $($_.Exception.Message)"
     }
 }
 
@@ -743,7 +780,8 @@ function Start-ACLsAnalysis {
     ) 
     
     if ($PSVersionTable.PSVersion -ge [Version]'5.1'){
-        Write-ACLightLog -Message "Starting ACLight3 scan. Domain='$Domain'; Full='$Full'; Output='$exportCsvFolder'."
+        Initialize-ACLightTelemetry
+        Write-ACLightLog -Message "Starting ACLight3 scan. Domain='$Domain'; Full='$Full'; Output='$exportCsvFolder'." -EventId 5100
         $time = New-Object system.Diagnostics.Stopwatch  
         $stagetime = New-Object system.Diagnostics.Stopwatch  
         $time.Start()
@@ -1041,11 +1079,11 @@ function Start-ACLsAnalysis {
         $runtimeMin = [math]::round($runtimeMin , 2)
         $runtimeHours = [math]::round($runtimeHours , 3)
         Write-Output "`nTotal time of the scan: $runtimeMin Minutes, $runtimeHours Hours"
-        Write-ACLightLog -Message "ACLight3 scan completed. Discovered $numberAccounts privileged accounts in $runtimeMin minutes."
+        Write-ACLightLog -Message "ACLight3 scan completed. Discovered $numberAccounts privileged accounts in $runtimeMin minutes." -EventId 5101
     }
     else {
         $message = "ACLight3 requires Windows PowerShell 5.1 or later. Current version: $($PSVersionTable.PSVersion)."
-        Write-ACLightLog -Message $message -Level ERROR
+        Write-ACLightLog -Message $message -Level ERROR -EventId 5199
         throw $message
     }
 }
@@ -3313,7 +3351,7 @@ function Invoke-ACLScanner {
         } | Export-Csv -NoTypeInformation -append $exportCsvFile -force
     }
     catch{
-        Write-ACLightLog -Message "ACL scan error: $($_.Exception.Message)" -Level ERROR
+        Write-ACLightLog -Message "ACL scan error: $($_.Exception.Message)" -Level ERROR -EventId 5198
         Write-Warning "`n$_"
         Write-Warning "There was an error while scanning one or more directory objects. Review the ACLight3 log for details."
     }
