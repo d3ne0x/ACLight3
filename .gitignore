@@ -1,0 +1,9 @@
+# ACLight3 generated output
+Results/
+Logs/
+LabResults-*/
+
+# PowerShell/editor local files
+*.clixml
+.vscode/
+.idea/
