@@ -1,35 +1,38 @@
 @{
+    RootModule = 'ACLight2.psm1'
+    ModuleVersion = '3.4.0'
+    GUID = '7e1fe5ea-1a5c-4bb8-a2d5-3d5c02ec5ef4'
 
-# Script module or binary module file associated with this manifest.
-ModuleToProcess = 'ACLight.psm1'
+    Author = 'Asaf Hecht (@hechtov), CyberArk Labs; ACLight3 stabilization maintained by d3ne0x'
+    CompanyName = 'Community'
+    Copyright = 'BSD 3-Clause'
+    Description = 'Privileged account and Shadow Admin discovery through Active Directory ACL analysis.'
 
-# Version number of this module.
-ModuleVersion = '2.0'
+    PowerShellVersion = '5.1'
+    CompatiblePSEditions = @('Desktop', 'Core')
 
-# ID used to uniquely identify this module
-GUID = 'as1he1d9-s83j-38a7-mf27-fjs994j238sa'
+    FunctionsToExport = @(
+        'Get-ObjectAcl',
+        'Invoke-ACLScanner',
+        'Start-domainACLsAnalysis',
+        'Start-ACLsAnalysis'
+    )
 
-# Author of this module
-Author = "Asaf Hecht (@hechtov), it's using functions from PowerView project created by - Will Schroeder (@harmj0y)"
+    CmdletsToExport = @()
+    VariablesToExport = @()
+    AliasesToExport = @()
 
-# Copyright statement for this module
-Copyright = 'BSD 3-Clause'
+    FileList = @(
+        'ACLight2.psm1',
+        'ACLight2.psd1',
+        'ACLight2.ps1'
+    )
 
-# Description of the functionality provided by this module
-Description = 'Privileged Account scanner through ACLs analysis - discover Shadow Admins'
-
-# Minimum version of the Windows PowerShell engine required by this module
-PowerShellVersion = '3.0'
-
-# Functions to export from this module
-FunctionsToExport = @(
-    'Get-ObjectAcl' ,
-    'Invoke-ACLScanner'
-    'Start-domainACLsAnalysis'
-    'Start-ACLsAnalysis'
-)
-
-# List of all files packaged with this module
-FileList = 'ACLight.psm1', 'ACLight.psd1', 'ACLight.ps1'
-
+    PrivateData = @{
+        PSData = @{
+            Tags = @('ActiveDirectory', 'ACL', 'Privilege', 'ShadowAdmin', 'Security')
+            LicenseUri = 'https://github.com/d3ne0x/ACLight3/blob/master/LICENSE'
+            ProjectUri = 'https://github.com/d3ne0x/ACLight3'
+        }
+    }
 }
