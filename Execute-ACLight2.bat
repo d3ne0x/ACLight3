@@ -1,8 +1,19 @@
 @echo off
-set var=%~d0%~p0%
-cd "%var%"
-set "var=%cd%\ACLight2.psm1"
+setlocal
+cd /d "%~dp0"
+
 echo.
-echo  Welcome, starting Multi-Layered ACLight scan
-powershell -noprofile -ExecutionPolicy Bypass Import-Module '%var%' -force ; Start-ACLsAnalysis
+echo  ACLight3 - Privileged Account and Shadow Admin Analysis
+echo.
+
+powershell.exe -NoLogo -NoProfile -File "%~dp0Start-ACLight3.ps1" %*
+set "exitCode=%ERRORLEVEL%"
+
+echo.
+if not "%exitCode%"=="0" (
+    echo ACLight3 finished with errors. Exit code: %exitCode%
+) else (
+    echo ACLight3 completed successfully.
+)
 pause
+exit /b %exitCode%
