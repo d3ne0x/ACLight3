@@ -86,6 +86,8 @@ $batch = Get-Content -LiteralPath (Join-Path $repoRoot 'Execute-ACLight2.bat') -
 Assert-Phase0 -Condition ($batch -notmatch '(?i)ExecutionPolicy\s+Bypass') -Message 'Launcher does not bypass execution policy'
 Assert-Phase0 -Condition ($mainScript -notmatch 'C:\\Temp\\scanACLsResults\.csv') -Message 'Legacy C:\Temp output default removed'
 Assert-Phase0 -Condition ($mainScript -notmatch '\$exportCsvFile\s*=\s*"C:\\scanACLsResults\.csv"') -Message 'Legacy C:\ output default removed'
+Assert-Phase0 -Condition ($mainScript -match 'Initialize-XeloTelemetry') -Message 'XeloTelemetry integration hook is present'
+Assert-Phase0 -Condition ($mainScript -match 'Write-XeloInfo') -Message 'XeloTelemetry event/file writer is wired in'
 
 Write-Host ""
 if ($failures.Count -gt 0) {
