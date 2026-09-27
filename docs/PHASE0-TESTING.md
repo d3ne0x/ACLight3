@@ -234,3 +234,25 @@ Phase 0 is ready to merge when all of the following are true:
 - Full scan completes in the lab.
 - Differences from the old scanner are explainable, especially DENY ACE removals.
 - `git status` remains clean after generated output.
+
+
+## 14. Optional XeloTelemetry integration test
+
+If you have the XELO telemetry runtime available, load its integration module through the supported launcher:
+
+```powershell
+.\Start-ACLight3.ps1 `
+  -Domain "lab.contoso.com" `
+  -XeloTelemetryModulePath "C:\Source\Xelo-Telemetry\powershell\XeloTelemetry.Integration.psm1"
+```
+
+The XeloTelemetry integration module must be able to locate its matching `XeloTelemetry.dll` as documented in the Xelo-Telemetry repository.
+
+Expected telemetry events:
+
+- Event ID 5100: ACLight3 scan started
+- Event ID 5101: ACLight3 scan completed
+- Event ID 5198: ACL scanner error
+- Event ID 5199: ACLight3 runtime/version error
+
+When XeloTelemetry is not loaded or cannot initialize, ACLight3 deliberately falls back to the local `Logs` directory rather than aborting the assessment.
